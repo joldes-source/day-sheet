@@ -394,14 +394,14 @@ document.addEventListener("visibilitychange", () => {
 
 /* ---------- auth ---------- */
 let signingUp = false;
-function setAuthMode(up) {
+function setAuthMode(up, keepStatus) {
   signingUp = up;
   $("authTitle").textContent = up ? "Create your account" : "Sign in";
   $("authBtn").textContent = up ? "Create account" : "Sign in";
   $("authPass").autocomplete = up ? "new-password" : "current-password";
   $("authSwapLead").textContent = up ? "Already have an account?" : "First time here?";
   $("authSwap").textContent = up ? "Sign in" : "Create your account";
-  flash("authStatus", up ? "Use the email Jeremiah added to the household, and pick a password of 8+ characters." : "");
+  if (!keepStatus) flash("authStatus", up ? "Use the email Jeremiah added to the household, and pick a password of 8+ characters." : "");
 }
 $("authSwap").onclick = () => setAuthMode(!signingUp);
 $("authForm").addEventListener("submit", async (e) => {
@@ -412,9 +412,12 @@ $("authForm").addEventListener("submit", async (e) => {
     if (signingUp) {
       const { data, error } = await sb.auth.signUp({ email, password, options: { emailRedirectTo: location.origin + location.pathname } });
       if (error) throw error;
+      if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+        flash("authStatus", "That email already has an account. Sign in instead, or use \"Forgot your password?\" below.", true); setAuthMode(false, true); $("authBtn").disabled = false; return;
+      }
       if (!data.session) {
         const r = await sb.auth.signInWithPassword({ email, password });
-        if (r.error) { flash("authStatus", "Account created. Check your email to confirm it, then sign in."); setAuthMode(false); }
+        if (r.error) flash("authStatus", "Account created. If you can't sign in yet, ask Jeremiah to check that your email is on the household list.", true);
       }
     } else {
       const { error } = await sb.auth.signInWithPassword({ email, password });
@@ -427,6 +430,20 @@ $("authForm").addEventListener("submit", async (e) => {
   $("authBtn").disabled = false;
 });
 $("signOut").onclick = () => sb.auth.signOut();
+$("forgotBtn").onclick = async () => {
+  const email = $("authEmail").value.trim();
+  if (!email) { flash("authStatus", "Type your email above first, then tap \"Forgot your password?\" again.", true); $("authEmail").focus(); return; }
+  const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname });
+  flash("authStatus", error ? "Couldn't send the reset email. Try again in a minute." : "Check your email for a link to reset your password. Open it on this device.", !!error);
+};
+let recovering = /type=recovery/.test(location.hash);
+$("newPassForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const { error } = await sb.auth.updateUser({ password: $("newPass").value });
+  if (error) { flash("newPassStatus", error.message || "Couldn't save that password.", true); return; }
+  recovering = false; $("newPassForm").hidden = true; $("authForm").hidden = false; $("forgotRow").hidden = false; history.replaceState(null, "", location.pathname);
+  const { data } = await sb.auth.getSession(); if (data.session) enter(data.session);
+});
 
 async function enter(session) {
   me = session.user;
@@ -443,7 +460,12 @@ function leave() {
   $("appView").hidden = true; $("authView").hidden = false; setAuthMode(false);
 }
 sb.auth.onAuthStateChange((event, session) => {
+  if (event === "PASSWORD_RECOVERY") {
+    recovering = true; showRecovery(); return;
+  }
+  if (recovering) return;
   if (session && (!me || me.id !== session.user.id)) setTimeout(() => enter(session), 0);
   else if (!session && me) leave();
 });
-sb.auth.getSession().then(({ data }) => { if (data.session) { if (!me) enter(data.session); } else leave(); });
+function showRecovery() { $("appView").hidden = true; $("authView").hidden = false; $("authForm").hidden = true; $("forgotRow").hidden = true; $("newPassForm").hidden = false; $("authTitle").textContent = "Reset your password"; }
+sb.auth.getSession().then(({ data }) => { if (recovering) { showRecovery(); return; } if (data.session) { if (!me) enter(data.session); } else leave(); });

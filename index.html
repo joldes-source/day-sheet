@@ -28,6 +28,13 @@
     <p class="status" id="authStatus"></p>
   </form>
   <p><span id="authSwapLead">First time here?</span> <button class="linkbtn" id="authSwap" type="button">Create your account</button></p>
+  <p id="forgotRow"><button class="linkbtn" id="forgotBtn" type="button">Forgot your password?</button></p>
+  <form id="newPassForm" class="panel" hidden>
+    <h2>Choose a new password</h2>
+    <label class="lbl">New password<input type="password" id="newPass" autocomplete="new-password" minlength="8" required></label>
+    <button class="primary" type="submit">Save password</button>
+    <p class="status" id="newPassStatus"></p>
+  </form>
 </div>
 
 <!-- App -->
