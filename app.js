@@ -3,6 +3,9 @@
 const SUPABASE_URL = "https://iekgcsexpoqututwhmbg.supabase.co";
 const SUPABASE_KEY = "sb_publishable_tsb_djTLVmaUnM51xRIvMA_gWzN_DiT"; // publishable key, safe in the browser
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const VAPID_PUBLIC = "BML9fsq3EeTS0JjWL1qcKc4a7XhNCKEfW7XYdHFMnIdOfP-KJ9dlM_RSG4XI05_wFJZp4O7wD4HNV_1YZDA4xnU";
+let swReg = null;
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").then((r) => (swReg = r)).catch((e) => console.warn("sw", e));
 
 const CATS = {
   soft75: { name: "Soft 75", c: "var(--s75)" },
@@ -430,6 +433,60 @@ $("authForm").addEventListener("submit", async (e) => {
   $("authBtn").disabled = false;
 });
 $("signOut").onclick = () => sb.auth.signOut();
+
+/* ---------- notifications ---------- */
+const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+const standalone = window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+const pushSupported = "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+const b64 = (s) => { const p = "=".repeat((4 - (s.length % 4)) % 4); const raw = atob((s + p).replace(/-/g, "+").replace(/_/g, "/")); return Uint8Array.from([...raw].map((c) => c.charCodeAt(0))); };
+const swReady = () => swReg ? Promise.resolve(swReg) : Promise.race([navigator.serviceWorker.ready, new Promise((_, rej) => setTimeout(() => rej(new Error("sw timeout")), 4000))]);
+async function currentSub() { try { const r = await swReady(); return await r.pushManager.getSubscription(); } catch (_) { return null; } }
+async function renderNotif() {
+  const help = $("notifHelp"), on = $("notifOn"), test = $("notifTest");
+  const { data: np } = await sb.from("notify_prefs").select("*").eq("owner", me.id);
+  const p = np && np[0] ? np[0] : { morning: true, dinner: true, chores: true, groceries: true };
+  document.querySelectorAll("[data-pref]").forEach((c) => (c.checked = p[c.dataset.pref] !== false));
+  if (isIOS && !standalone) {
+    help.innerHTML = "On iPhone, notifications only work from the Home Screen app. In Safari, tap <b>Share</b> then <b>Add to Home Screen</b>, open Day Sheet from the new icon, sign in, and come back here.";
+    on.hidden = true; test.hidden = true; return;
+  }
+  if (!pushSupported) { help.textContent = "This browser can't receive notifications. Try Safari on iPhone (from the Home Screen) or Chrome."; on.hidden = true; test.hidden = true; return; }
+  const sub = await currentSub();
+  const perm = Notification.permission;
+  if (perm === "denied") { help.textContent = "Notifications are blocked for Day Sheet. Turn them on in your phone's Settings → Notifications → Day Sheet, then come back."; on.hidden = true; test.hidden = true; return; }
+  if (sub && perm === "granted") { help.textContent = "Notifications are on for this device. Pick which ones you want:"; on.hidden = true; test.hidden = false; }
+  else { help.textContent = "Get reminders on this device. Pick which ones you want, then turn them on."; on.hidden = false; test.hidden = true; }
+}
+$("notifBtn").onclick = () => { $("notifPanel").hidden = !$("notifPanel").hidden; if (!$("notifPanel").hidden) renderNotif(); };
+$("notifClose").onclick = () => ($("notifPanel").hidden = true);
+$("notifOn").onclick = async () => {
+  try {
+    const perm = await Notification.requestPermission();
+    if (perm !== "granted") { flash("notifStatus", "Notifications weren't allowed. You can turn them on later in Settings.", true); return renderNotif(); }
+    const reg = await swReady();
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64(VAPID_PUBLIC) });
+    const j = sub.toJSON();
+    await q(sb.from("push_subscriptions").upsert({ owner: me.id, endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth, user_agent: navigator.userAgent.slice(0, 200) }, { onConflict: "endpoint" }));
+    await savePrefs();
+    flash("notifStatus", "Notifications are on.");
+    renderNotif();
+  } catch (err) { console.error(err); flash("notifStatus", "Couldn't turn notifications on. Try again.", true); }
+};
+$("notifTest").onclick = async () => {
+  try {
+    const { data } = await sb.auth.getSession();
+    const r = await fetch(SUPABASE_URL + "/functions/v1/notify", { method: "POST", headers: { "content-type": "application/json", authorization: "Bearer " + data.session.access_token }, body: JSON.stringify({ mode: "test" }) });
+    const j = await r.json();
+    flash("notifStatus", j.sent ? "Test sent. It should arrive in a few seconds." : "No device is set up yet. Tap Turn on notifications first.", !j.sent);
+  } catch (err) { console.error(err); flash("notifStatus", "Couldn't send a test. Try again.", true); }
+};
+async function savePrefs() {
+  const row = { owner: me.id, updated_at: new Date().toISOString() };
+  document.querySelectorAll("[data-pref]").forEach((c) => (row[c.dataset.pref] = c.checked));
+  await q(sb.from("notify_prefs").upsert(row));
+}
+$("notifPrefs").addEventListener("change", async () => { try { await savePrefs(); flash("notifStatus", "Saved."); } catch (err) { console.error(err); flash("notifStatus", "Couldn't save that. Try again.", true); } });
 $("chpwBtn").onclick = () => { $("chpwForm").hidden = !$("chpwForm").hidden; if (!$("chpwForm").hidden) $("chpwNew").focus(); };
 $("chpwCancel").onclick = () => { $("chpwForm").hidden = true; $("chpwNew").value = ""; flash("chpwStatus", ""); };
 $("chpwForm").addEventListener("submit", async (e) => {

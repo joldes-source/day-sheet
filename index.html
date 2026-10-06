@@ -39,7 +39,22 @@
 
 <!-- App -->
 <div class="wrap" id="appView" hidden>
-  <div class="topbar"><span id="whoami"></span><span class="row" style="gap:14px;flex-wrap:nowrap"><button class="linkbtn" id="chpwBtn" type="button">Change password</button><button class="linkbtn" id="signOut" type="button">Sign out</button></span></div>
+  <div class="topbar"><span id="whoami"></span><span class="row" style="gap:14px;flex-wrap:nowrap"><button class="linkbtn" id="notifBtn" type="button">Notifications</button><button class="linkbtn" id="chpwBtn" type="button">Change password</button><button class="linkbtn" id="signOut" type="button">Sign out</button></span></div>
+  <section class="panel" id="notifPanel" hidden aria-labelledby="notifH">
+    <div class="panel-head"><h2 id="notifH">Notifications</h2><button class="x" id="notifClose" type="button" aria-label="Close">×</button></div>
+    <p class="empty" id="notifHelp"></p>
+    <div class="row" style="align-items:center" id="notifActions">
+      <button class="primary" id="notifOn" type="button" style="flex:0 0 auto">Turn on notifications</button>
+      <button class="ghost" id="notifTest" type="button" style="flex:0 0 auto" hidden>Send a test</button>
+    </div>
+    <div class="prefs" id="notifPrefs">
+      <label class="pref"><input type="checkbox" data-pref="morning"> <span><b>Morning rundown</b> · 7 AM: your chores, must-dos and tonight's dinner</span></label>
+      <label class="pref"><input type="checkbox" data-pref="dinner"> <span><b>Dinner reminder</b> · 3 PM, only if nothing's planned</span></label>
+      <label class="pref"><input type="checkbox" data-pref="chores"> <span><b>Chore nudge</b> · 6 PM, only if your chores aren't checked off</span></label>
+      <label class="pref"><input type="checkbox" data-pref="groceries"> <span><b>Grocery heads-up</b> · when the other person adds items</span></label>
+    </div>
+    <p class="status" id="notifStatus"></p>
+  </section>
   <form class="panel" id="chpwForm" hidden>
     <h2>Change your password</h2>
     <label class="lbl">New password<input type="password" id="chpwNew" autocomplete="new-password" minlength="8" required></label>

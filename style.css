@@ -149,3 +149,11 @@ input[type=email],input[type=password]{width:100%;background:var(--bg);border:1p
 .ggroup{display:flex;flex-direction:column}
 .ggroup+.ggroup{margin-top:10px}
 #grocForm{gap:8px}
+.prefs{display:flex;flex-direction:column;gap:2px}
+.pref{display:flex;gap:10px;align-items:flex-start;padding:8px 2px;border-top:1px solid var(--line);font-size:.92rem;cursor:pointer}
+.pref:first-child{border-top:0}
+.pref input{margin-top:3px;width:18px;height:18px;accent-color:var(--accent);flex:0 0 auto}
+.topbar .row .linkbtn{white-space:nowrap}
+.topbar{flex-wrap:wrap}
+#whoami{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.topbar .row>*{flex:0 0 auto}
