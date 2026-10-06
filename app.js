@@ -430,6 +430,15 @@ $("authForm").addEventListener("submit", async (e) => {
   $("authBtn").disabled = false;
 });
 $("signOut").onclick = () => sb.auth.signOut();
+$("chpwBtn").onclick = () => { $("chpwForm").hidden = !$("chpwForm").hidden; if (!$("chpwForm").hidden) $("chpwNew").focus(); };
+$("chpwCancel").onclick = () => { $("chpwForm").hidden = true; $("chpwNew").value = ""; flash("chpwStatus", ""); };
+$("chpwForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const { error } = await sb.auth.updateUser({ password: $("chpwNew").value });
+  if (error) { flash("chpwStatus", /different/i.test(error.message || "") ? "Pick a password different from your current one." : (error.message || "Couldn't change your password. Try again."), true); return; }
+  $("chpwNew").value = ""; flash("chpwStatus", "Password changed.");
+  setTimeout(() => { $("chpwForm").hidden = true; flash("chpwStatus", ""); }, 1500);
+});
 $("forgotBtn").onclick = async () => {
   const email = $("authEmail").value.trim();
   if (!email) { flash("authStatus", "Type your email above first, then tap \"Forgot your password?\" again.", true); $("authEmail").focus(); return; }
