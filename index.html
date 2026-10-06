@@ -57,6 +57,7 @@
     <button role="tab" id="tab-today" data-tab="today" aria-controls="pane-today">Today</button>
     <button role="tab" id="tab-brief" data-tab="brief" aria-controls="pane-brief">Brief</button>
     <button role="tab" id="tab-chores" data-tab="chores" aria-controls="pane-chores">Chores</button>
+    <button role="tab" id="tab-meals" data-tab="meals" aria-controls="pane-meals">Meals</button>
     <button role="tab" id="tab-add" data-tab="add" aria-controls="pane-add">Add</button>
     <button role="tab" id="tab-routines" data-tab="routines" aria-controls="pane-routines">Routines</button>
   </nav>
@@ -97,6 +98,25 @@
         </div>
         <div class="row" style="align-items:center"><button class="primary" type="submit" id="chBtn" style="flex:0 0 auto">Add chore</button></div>
       </form>
+    </section>
+  </div>
+
+  <div class="pane" role="tabpanel" id="pane-meals" aria-labelledby="tab-meals" data-pane="meals">
+    <section class="panel" aria-labelledby="menuH">
+      <div class="panel-head"><h2 id="menuH">Dinner menu</h2><span class="eyebrow" id="menuWeek">This week</span></div>
+      <p class="empty">Type a dinner for each night. Changes save automatically and you both see them.</p>
+      <div class="menu" id="menu"></div>
+      <p class="status" id="menuStatus"></p>
+    </section>
+    <section class="panel" aria-labelledby="grocH">
+      <div class="panel-head"><h2 id="grocH">Grocery list</h2><span class="eyebrow" id="grocCount"></span></div>
+      <form id="grocForm" class="row" style="align-items:center">
+        <input type="text" id="grocText" placeholder="Milk, eggs, spinach" autocomplete="off" aria-label="Grocery items, separated by commas" style="flex:1 1 200px">
+        <button class="primary" type="submit" id="grocBtn" style="flex:0 0 auto">Add</button>
+      </form>
+      <div id="grocList"><p class="empty">Loading the list…</p></div>
+      <div class="row" id="grocClearRow" hidden><button class="ghost" id="grocClear" type="button" style="flex:0 0 auto">Clear bought items</button></div>
+      <p class="status" id="grocStatus"></p>
     </section>
   </div>
 

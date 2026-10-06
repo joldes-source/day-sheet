@@ -27,6 +27,7 @@ let householdId = null;
 let people = [];            // profiles in the household
 let tasks = [], checks = new Set(), brief = null, challenge = null;
 let chores = [], choreChecks = {}, dumps = [];
+let groceries = [], meals = {};
 let viewDate = todayIso();
 
 /* ---------- schedule logic ---------- */
@@ -100,7 +101,29 @@ function render() {
         }).join("") + `</div>`;
     }).join("");
   }
-  renderRoutines(); renderBrief(); renderChallenge(); renderChart(); renderDumps();
+  renderRoutines(); renderBrief(); renderChallenge(); renderChart(); renderDumps(); renderGroceries(); renderMenu();
+}
+function weekDays() { const v = fromIso(viewDate); return [1, 2, 3, 4, 5, 6, 0].map((d) => iso(weekDate(v, d))); }
+function renderMenu() {
+  const el = $("menu"); if (!member) { el.innerHTML = ""; return; }
+  const days = weekDays(), today = todayIso();
+  $("menuWeek").textContent = "Week of " + fromIso(days[0]).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  const focused = document.activeElement && document.activeElement.dataset && document.activeElement.dataset.meal;
+  el.innerHTML = days.map((ds) => {
+    const d = fromIso(ds), val = meals[ds] || "";
+    return `<label class="mday${ds === today ? " today" : ""}"><span class="dn">${DOW[d.getDay()]} <span class="dd">${d.getDate()}</span></span><input type="text" id="meal_${ds}" data-meal="${ds}" value="${esc(val)}" placeholder="${ds < today ? "" : "What's for dinner?"}" maxlength="200" autocomplete="off"></label>`;
+  }).join("");
+  if (focused && $("meal_" + focused)) { const i = $("meal_" + focused); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }
+}
+function renderGroceries() {
+  const el = $("grocList");
+  if (!member) { el.innerHTML = ""; return; }
+  const need = groceries.filter((g) => !g.bought), got = groceries.filter((g) => g.bought);
+  $("grocCount").textContent = need.length ? need.length + " to buy" : "";
+  $("grocClearRow").hidden = !got.length;
+  if (!groceries.length) { el.innerHTML = '<p class="empty">The list is empty. Add what you need, separated by commas.</p>'; return; }
+  const row = (g) => `<div class="task${g.bought ? " done" : ""}"><input type="checkbox" class="check" style="--c:var(--accent)" id="g_${esc(g.id)}" data-groc="${esc(g.id)}" ${g.bought ? "checked" : ""} aria-label="${esc(g.name)}"><label class="t-body" for="g_${esc(g.id)}"><span class="t-title">${esc(g.name)}</span>${g.added_by && g.added_by !== me.id ? `<span class="t-meta"><span>added by ${esc(nameOf(g.added_by))}</span></span>` : ""}</label><button class="x" data-delgroc="${esc(g.id)}" aria-label="Remove ${esc(g.name)}">×</button></div>`;
+  el.innerHTML = need.map(row).join("") + (got.length ? `<div class="sub" style="margin-top:8px">In the cart</div>` + got.map(row).join("") : "");
 }
 function weekDate(v, d) { const m = new Date(v); m.setDate(v.getDate() - ((v.getDay() + 6) % 7)); const r = new Date(m); r.setDate(m.getDate() + ((d + 6) % 7)); return r; }
 function renderChart() {
@@ -169,6 +192,13 @@ async function loadStatic() {
 }
 async function loadTasks() { tasks = await q(sb.from("tasks").select("*").order("created_at")); }
 async function loadChores() { chores = member ? await q(sb.from("chores").select("*").order("created_at")) : []; }
+async function loadGroceries() { groceries = member ? await q(sb.from("groceries").select("*").order("created_at")) : []; }
+async function loadMeals() {
+  if (!member) { meals = {}; return; }
+  const days = weekDays();
+  const rows = await q(sb.from("meals").select("day,dinner").gte("day", days[0]).lte("day", days[6]));
+  meals = {}; rows.forEach((r) => (meals[r.day] = r.dinner));
+}
 async function loadDumps() { dumps = await q(sb.from("brain_dumps").select("id,body,processed_at,created_at").is("processed_at", null).order("created_at")); }
 async function loadChallenge() { const c = await q(sb.from("challenges").select("*").eq("key", "soft75")); challenge = c[0] || null; }
 async function loadDay() {
@@ -186,11 +216,11 @@ async function loadDay() {
 async function refreshAll() {
   try {
     await loadStatic();
-    await Promise.all([loadTasks(), loadChores(), loadDumps(), loadChallenge(), loadDay()]);
+    await Promise.all([loadTasks(), loadChores(), loadDumps(), loadChallenge(), loadDay(), loadGroceries(), loadMeals()]);
     render();
   } catch (e) { console.error(e); $("groups").innerHTML = '<p class="empty">Couldn\'t load your day. Check your connection and reload.</p>'; }
 }
-async function goto(ds) { viewDate = ds; render(); try { await loadDay(); render(); } catch (e) { console.error(e); } }
+async function goto(ds) { viewDate = ds; render(); try { await Promise.all([loadDay(), loadMeals()]); render(); } catch (e) { console.error(e); } }
 $("prevDay").onclick = () => { const d = fromIso(viewDate); d.setDate(d.getDate() - 1); goto(iso(d)); };
 $("nextDay").onclick = () => { const d = fromIso(viewDate); d.setDate(d.getDate() + 1); goto(iso(d)); };
 $("todayBtn").onclick = () => goto(todayIso());
@@ -215,6 +245,8 @@ document.addEventListener("click", async (e) => {
   const b = e.target.closest("button"); if (!b) return;
   try {
     if (b.dataset.del) { if (!armed(b)) return; await q(sb.from("tasks").delete().eq("id", b.dataset.del)); await loadTasks(); render(); return; }
+    if (b.dataset.delgroc) { groceries = groceries.filter((g) => g.id !== b.dataset.delgroc); renderGroceries(); await q(sb.from("groceries").delete().eq("id", b.dataset.delgroc)); return; }
+    if (b.id === "grocClear") { const ids = groceries.filter((g) => g.bought).map((g) => g.id); groceries = groceries.filter((g) => !g.bought); renderGroceries(); if (ids.length) await q(sb.from("groceries").delete().in("id", ids)); return; }
     if (b.dataset.deldump) { await q(sb.from("brain_dumps").delete().eq("id", b.dataset.deldump)); await loadDumps(); render(); return; }
     if (b.dataset.delchore) { if (!armed(b)) return; await q(sb.from("chores").delete().eq("id", b.dataset.delchore)); await loadChores(); render(); return; }
     if (b.dataset.who) {
@@ -259,6 +291,32 @@ $("choreForm").addEventListener("submit", async (e) => {
   } catch (err) { console.error(err); flash("chStatus", "Couldn't add that chore. Try again.", true); }
   $("chBtn").disabled = false;
 });
+$("grocList").addEventListener("change", async (e) => {
+  const id = e.target.dataset.groc; if (!id) return;
+  const g = groceries.find((x) => x.id === id); if (!g) return;
+  g.bought = e.target.checked; renderGroceries();
+  try { await q(sb.from("groceries").update({ bought: g.bought, bought_at: g.bought ? new Date().toISOString() : null }).eq("id", id)); }
+  catch (err) { console.error(err); flash("grocStatus", "Couldn't save that. Try again.", true); await loadGroceries(); renderGroceries(); }
+});
+$("grocForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const names = $("grocText").value.split(/[,\n]/).map((x) => x.trim()).filter(Boolean).map((x) => x.slice(0, 120));
+  if (!names.length || !member) return;
+  $("grocBtn").disabled = true;
+  try { await q(sb.from("groceries").insert(names.map((name) => ({ name, household_id: householdId })))); $("grocText").value = ""; flash("grocStatus", ""); await loadGroceries(); renderGroceries(); }
+  catch (err) { console.error(err); flash("grocStatus", "Couldn't add those. Try again.", true); }
+  $("grocBtn").disabled = false;
+});
+const mealTimers = {};
+$("menu").addEventListener("input", (e) => {
+  const ds = e.target.dataset.meal; if (!ds) return;
+  meals[ds] = e.target.value;
+  clearTimeout(mealTimers[ds]);
+  mealTimers[ds] = setTimeout(async () => {
+    try { await q(sb.from("meals").upsert({ household_id: householdId, day: ds, dinner: (meals[ds] || "").trim(), updated_at: new Date().toISOString() })); flash("menuStatus", "Saved."); }
+    catch (err) { console.error(err); flash("menuStatus", "Couldn't save that dinner. Try again.", true); }
+  }, 700);
+});
 $("dumpBtn").addEventListener("click", async () => {
   const body = $("dumpText").value.trim(); if (!body) return;
   $("dumpBtn").disabled = true;
@@ -268,7 +326,7 @@ $("dumpBtn").addEventListener("click", async () => {
 });
 
 /* ---------- tabs ---------- */
-const TABS = ["today", "brief", "chores", "add", "routines"];
+const TABS = ["today", "brief", "chores", "meals", "add", "routines"];
 function showTab(name, focus) {
   if (!TABS.includes(name)) name = "today";
   document.querySelectorAll(".tabs [role=tab]").forEach((b) => { const on = b.dataset.tab === name; b.setAttribute("aria-selected", String(on)); b.tabIndex = on ? 0 : -1; if (on && focus) b.focus(); });
@@ -286,11 +344,13 @@ document.querySelector(".tabs").addEventListener("keydown", (e) => {
 let channel = null;
 function subscribeLive() {
   if (channel || !member) return;
-  let timer = null;
+  let timer = null, gTimer = null, mTimer = null;
   const soon = () => { clearTimeout(timer); timer = setTimeout(async () => { try { await Promise.all([loadChores(), loadDay()]); render(); } catch (_) {} }, 300); };
   channel = sb.channel("household")
     .on("postgres_changes", { event: "*", schema: "public", table: "chores" }, soon)
     .on("postgres_changes", { event: "*", schema: "public", table: "chore_checks" }, soon)
+    .on("postgres_changes", { event: "*", schema: "public", table: "groceries" }, () => { clearTimeout(gTimer); gTimer = setTimeout(async () => { try { await loadGroceries(); renderGroceries(); } catch (_) {} }, 300); })
+    .on("postgres_changes", { event: "*", schema: "public", table: "meals" }, () => { clearTimeout(mTimer); mTimer = setTimeout(async () => { const a = document.activeElement; if (a && a.dataset && a.dataset.meal) return; try { await loadMeals(); renderMenu(); } catch (_) {} }, 300); })
     .subscribe();
 }
 document.addEventListener("visibilitychange", () => {
