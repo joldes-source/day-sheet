@@ -136,6 +136,16 @@ input[type=email],input[type=password]{width:100%;background:var(--bg);border:1p
 .mday.today .dn{color:var(--accent)}
 .mday input{width:100%;min-width:0;background:transparent;border:1px solid transparent;border-radius:8px;padding:8px 10px}
 .mday input:hover,.mday input:focus{background:var(--bg);border-color:var(--line)}
-#grocForm{flex-direction:row;flex-wrap:nowrap;gap:8px}
-#grocForm input{flex:1 1 auto;width:auto;min-width:0}
 .sub{font-weight:600;font-size:.85rem;margin-top:4px}
+.mday{align-items:start}
+.mday .dn{padding-top:9px}
+.mbody{display:flex;flex-direction:column;gap:6px;min-width:0}
+.ings{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:0 2px 4px}
+.ing{font-size:.8rem;background:var(--paper);border:1px solid var(--line);border-radius:99px;padding:2px 9px}
+.ing.got{color:var(--muted);text-decoration:line-through}
+.ingform{flex:1 1 140px;min-width:0}
+.ingform input{width:100%;font-size:.85rem;background:transparent;border:1px dashed var(--line);border-radius:99px;padding:4px 10px}
+.ingform input:focus{background:var(--bg);border-style:solid}
+.ggroup{display:flex;flex-direction:column}
+.ggroup+.ggroup{margin-top:10px}
+#grocForm{gap:8px}

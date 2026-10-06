@@ -104,26 +104,50 @@ function render() {
   renderRoutines(); renderBrief(); renderChallenge(); renderChart(); renderDumps(); renderGroceries(); renderMenu();
 }
 function weekDays() { const v = fromIso(viewDate); return [1, 2, 3, 4, 5, 6, 0].map((d) => iso(weekDate(v, d))); }
+const ingDraft = {};
+const dayLabel = (ds) => { const d = fromIso(ds); return DOW[d.getDay()] + " " + d.getDate(); };
+function keepFocus(fn) {
+  const a = document.activeElement, id = a && a.id, pos = a && a.selectionStart;
+  fn();
+  if (id && $(id) && $(id) !== a) { const i = $(id); i.focus(); try { i.setSelectionRange(pos, pos); } catch (_) {} }
+}
 function renderMenu() {
   const el = $("menu"); if (!member) { el.innerHTML = ""; return; }
   const days = weekDays(), today = todayIso();
   $("menuWeek").textContent = "Week of " + fromIso(days[0]).toLocaleDateString(undefined, { month: "short", day: "numeric" });
-  const focused = document.activeElement && document.activeElement.dataset && document.activeElement.dataset.meal;
-  el.innerHTML = days.map((ds) => {
-    const d = fromIso(ds), val = meals[ds] || "";
-    return `<label class="mday${ds === today ? " today" : ""}"><span class="dn">${DOW[d.getDay()]} <span class="dd">${d.getDate()}</span></span><input type="text" id="meal_${ds}" data-meal="${ds}" value="${esc(val)}" placeholder="${ds < today ? "" : "What's for dinner?"}" maxlength="200" autocomplete="off"></label>`;
-  }).join("");
-  if (focused && $("meal_" + focused)) { const i = $("meal_" + focused); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }
+  keepFocus(() => {
+    el.innerHTML = days.map((ds) => {
+      const val = meals[ds] || "", ings = groceries.filter((g) => g.meal_day === ds);
+      const showIng = val.trim() || ings.length;
+      return `<div class="mday${ds === today ? " today" : ""}"><label class="dn" for="meal_${ds}">${dayLabel(ds).replace(" ", ' <span class="dd">')}</span></label>
+        <div class="mbody"><input type="text" id="meal_${ds}" data-meal="${ds}" value="${esc(val)}" placeholder="${ds < today ? "" : "What's for dinner?"}" maxlength="200" autocomplete="off" aria-label="Dinner on ${dayLabel(ds)}">
+        ${showIng ? `<div class="ings">${ings.map((g) => `<span class="ing${g.bought ? " got" : ""}">${g.bought ? "✓ " : ""}${esc(g.name)}</span>`).join("")}<form class="ingform" data-ingday="${ds}"><input type="text" id="ing_${ds}" value="${esc(ingDraft[ds] || "")}" placeholder="+ add ingredients" aria-label="Ingredients to buy for ${dayLabel(ds)}" autocomplete="off"></form></div>` : ""}</div></div>`;
+    }).join("");
+  });
+}
+function renderGrocFor() {
+  const sel = $("grocFor"), cur = sel.value;
+  const opts = weekDays().filter((ds) => (meals[ds] || "").trim() && ds >= todayIso());
+  sel.innerHTML = '<option value="">Just the list</option>' + opts.map((ds) => `<option value="${ds}">${esc(dayLabel(ds))} · ${esc(meals[ds])}</option>`).join("");
+  if ([...sel.options].some((o) => o.value === cur)) sel.value = cur;
 }
 function renderGroceries() {
   const el = $("grocList");
   if (!member) { el.innerHTML = ""; return; }
+  renderGrocFor();
   const need = groceries.filter((g) => !g.bought), got = groceries.filter((g) => g.bought);
   $("grocCount").textContent = need.length ? need.length + " to buy" : "";
   $("grocClearRow").hidden = !got.length;
-  if (!groceries.length) { el.innerHTML = '<p class="empty">The list is empty. Add what you need, separated by commas.</p>'; return; }
+  if (!groceries.length) { el.innerHTML = '<p class="empty">The list is empty. Add items here, or add ingredients to a dinner on the Dinner tab.</p>'; return; }
   const row = (g) => `<div class="task${g.bought ? " done" : ""}"><input type="checkbox" class="check" style="--c:var(--accent)" id="g_${esc(g.id)}" data-groc="${esc(g.id)}" ${g.bought ? "checked" : ""} aria-label="${esc(g.name)}"><label class="t-body" for="g_${esc(g.id)}"><span class="t-title">${esc(g.name)}</span>${g.added_by && g.added_by !== me.id ? `<span class="t-meta"><span>added by ${esc(nameOf(g.added_by))}</span></span>` : ""}</label><button class="x" data-delgroc="${esc(g.id)}" aria-label="Remove ${esc(g.name)}">×</button></div>`;
-  el.innerHTML = need.map(row).join("") + (got.length ? `<div class="sub" style="margin-top:8px">In the cart</div>` + got.map(row).join("") : "");
+  const days = [...new Set(groceries.map((g) => g.meal_day).filter(Boolean))].sort();
+  const groups = days.map((ds) => ({ title: `For ${dayLabel(ds)}${meals[ds] ? " · " + meals[ds] : ""}`, items: groceries.filter((g) => g.meal_day === ds) }));
+  const other = groceries.filter((g) => !g.meal_day);
+  if (other.length) groups.push({ title: days.length ? "Other items" : "", items: other });
+  el.innerHTML = groups.map((gr) => {
+    const items = gr.items.slice().sort((a, b) => a.bought - b.bought);
+    return `<div class="ggroup">${gr.title ? `<div class="sub">${esc(gr.title)}</div>` : ""}${items.map(row).join("")}</div>`;
+  }).join("");
 }
 function weekDate(v, d) { const m = new Date(v); m.setDate(v.getDate() - ((v.getDay() + 6) % 7)); const r = new Date(m); r.setDate(m.getDate() + ((d + 6) % 7)); return r; }
 function renderChart() {
@@ -195,8 +219,8 @@ async function loadChores() { chores = member ? await q(sb.from("chores").select
 async function loadGroceries() { groceries = member ? await q(sb.from("groceries").select("*").order("created_at")) : []; }
 async function loadMeals() {
   if (!member) { meals = {}; return; }
-  const days = weekDays();
-  const rows = await q(sb.from("meals").select("day,dinner").gte("day", days[0]).lte("day", days[6]));
+  const days = [...new Set(weekDays().concat(groceries.map((g) => g.meal_day).filter(Boolean)))];
+  const rows = await q(sb.from("meals").select("day,dinner").in("day", days));
   meals = {}; rows.forEach((r) => (meals[r.day] = r.dinner));
 }
 async function loadDumps() { dumps = await q(sb.from("brain_dumps").select("id,body,processed_at,created_at").is("processed_at", null).order("created_at")); }
@@ -216,7 +240,7 @@ async function loadDay() {
 async function refreshAll() {
   try {
     await loadStatic();
-    await Promise.all([loadTasks(), loadChores(), loadDumps(), loadChallenge(), loadDay(), loadGroceries(), loadMeals()]);
+    await Promise.all([loadTasks(), loadChores(), loadDumps(), loadChallenge(), loadDay(), loadGroceries().then(loadMeals)]);
     render();
   } catch (e) { console.error(e); $("groups").innerHTML = '<p class="empty">Couldn\'t load your day. Check your connection and reload.</p>'; }
 }
@@ -245,8 +269,8 @@ document.addEventListener("click", async (e) => {
   const b = e.target.closest("button"); if (!b) return;
   try {
     if (b.dataset.del) { if (!armed(b)) return; await q(sb.from("tasks").delete().eq("id", b.dataset.del)); await loadTasks(); render(); return; }
-    if (b.dataset.delgroc) { groceries = groceries.filter((g) => g.id !== b.dataset.delgroc); renderGroceries(); await q(sb.from("groceries").delete().eq("id", b.dataset.delgroc)); return; }
-    if (b.id === "grocClear") { const ids = groceries.filter((g) => g.bought).map((g) => g.id); groceries = groceries.filter((g) => !g.bought); renderGroceries(); if (ids.length) await q(sb.from("groceries").delete().in("id", ids)); return; }
+    if (b.dataset.delgroc) { groceries = groceries.filter((g) => g.id !== b.dataset.delgroc); renderGroceries(); renderMenu(); await q(sb.from("groceries").delete().eq("id", b.dataset.delgroc)); return; }
+    if (b.id === "grocClear") { const ids = groceries.filter((g) => g.bought).map((g) => g.id); groceries = groceries.filter((g) => !g.bought); renderGroceries(); renderMenu(); if (ids.length) await q(sb.from("groceries").delete().in("id", ids)); return; }
     if (b.dataset.deldump) { await q(sb.from("brain_dumps").delete().eq("id", b.dataset.deldump)); await loadDumps(); render(); return; }
     if (b.dataset.delchore) { if (!armed(b)) return; await q(sb.from("chores").delete().eq("id", b.dataset.delchore)); await loadChores(); render(); return; }
     if (b.dataset.who) {
@@ -294,7 +318,7 @@ $("choreForm").addEventListener("submit", async (e) => {
 $("grocList").addEventListener("change", async (e) => {
   const id = e.target.dataset.groc; if (!id) return;
   const g = groceries.find((x) => x.id === id); if (!g) return;
-  g.bought = e.target.checked; renderGroceries();
+  g.bought = e.target.checked; renderGroceries(); renderMenu();
   try { await q(sb.from("groceries").update({ bought: g.bought, bought_at: g.bought ? new Date().toISOString() : null }).eq("id", id)); }
   catch (err) { console.error(err); flash("grocStatus", "Couldn't save that. Try again.", true); await loadGroceries(); renderGroceries(); }
 });
@@ -303,17 +327,28 @@ $("grocForm").addEventListener("submit", async (e) => {
   const names = $("grocText").value.split(/[,\n]/).map((x) => x.trim()).filter(Boolean).map((x) => x.slice(0, 120));
   if (!names.length || !member) return;
   $("grocBtn").disabled = true;
-  try { await q(sb.from("groceries").insert(names.map((name) => ({ name, household_id: householdId })))); $("grocText").value = ""; flash("grocStatus", ""); await loadGroceries(); renderGroceries(); }
+  try { await q(sb.from("groceries").insert(names.map((name) => ({ name, household_id: householdId, meal_day: $("grocFor").value || null })))); $("grocText").value = ""; flash("grocStatus", ""); await loadGroceries(); renderGroceries(); renderMenu(); }
   catch (err) { console.error(err); flash("grocStatus", "Couldn't add those. Try again.", true); }
   $("grocBtn").disabled = false;
 });
+$("menu").addEventListener("submit", async (e) => {
+  const f = e.target.closest(".ingform"); if (!f) return;
+  e.preventDefault();
+  const ds = f.dataset.ingday, inp = f.querySelector("input");
+  const names = inp.value.split(/[,\n]/).map((x) => x.trim()).filter(Boolean).map((x) => x.slice(0, 120));
+  if (!names.length) return;
+  ingDraft[ds] = ""; inp.value = "";
+  try { await q(sb.from("groceries").insert(names.map((name) => ({ name, household_id: householdId, meal_day: ds })))); await loadGroceries(); renderGroceries(); renderMenu(); flash("menuStatus", "Added to the grocery list."); }
+  catch (err) { console.error(err); flash("menuStatus", "Couldn't add those. Try again.", true); }
+});
 const mealTimers = {};
 $("menu").addEventListener("input", (e) => {
+  if (e.target.id && e.target.id.startsWith("ing_")) { ingDraft[e.target.id.slice(4)] = e.target.value; return; }
   const ds = e.target.dataset.meal; if (!ds) return;
   meals[ds] = e.target.value;
   clearTimeout(mealTimers[ds]);
   mealTimers[ds] = setTimeout(async () => {
-    try { await q(sb.from("meals").upsert({ household_id: householdId, day: ds, dinner: (meals[ds] || "").trim(), updated_at: new Date().toISOString() })); flash("menuStatus", "Saved."); }
+    try { await q(sb.from("meals").upsert({ household_id: householdId, day: ds, dinner: (meals[ds] || "").trim(), updated_at: new Date().toISOString() })); flash("menuStatus", "Saved."); renderMenu(); renderGrocFor(); }
     catch (err) { console.error(err); flash("menuStatus", "Couldn't save that dinner. Try again.", true); }
   }, 700);
 });
@@ -326,7 +361,7 @@ $("dumpBtn").addEventListener("click", async () => {
 });
 
 /* ---------- tabs ---------- */
-const TABS = ["today", "brief", "chores", "meals", "add", "routines"];
+const TABS = ["today", "brief", "chores", "dinner", "groceries", "add", "routines"];
 function showTab(name, focus) {
   if (!TABS.includes(name)) name = "today";
   document.querySelectorAll(".tabs [role=tab]").forEach((b) => { const on = b.dataset.tab === name; b.setAttribute("aria-selected", String(on)); b.tabIndex = on ? 0 : -1; if (on && focus) b.focus(); });
@@ -349,8 +384,8 @@ function subscribeLive() {
   channel = sb.channel("household")
     .on("postgres_changes", { event: "*", schema: "public", table: "chores" }, soon)
     .on("postgres_changes", { event: "*", schema: "public", table: "chore_checks" }, soon)
-    .on("postgres_changes", { event: "*", schema: "public", table: "groceries" }, () => { clearTimeout(gTimer); gTimer = setTimeout(async () => { try { await loadGroceries(); renderGroceries(); } catch (_) {} }, 300); })
-    .on("postgres_changes", { event: "*", schema: "public", table: "meals" }, () => { clearTimeout(mTimer); mTimer = setTimeout(async () => { const a = document.activeElement; if (a && a.dataset && a.dataset.meal) return; try { await loadMeals(); renderMenu(); } catch (_) {} }, 300); })
+    .on("postgres_changes", { event: "*", schema: "public", table: "groceries" }, () => { clearTimeout(gTimer); gTimer = setTimeout(async () => { try { await loadGroceries(); await loadMeals(); renderGroceries(); renderMenu(); } catch (_) {} }, 300); })
+    .on("postgres_changes", { event: "*", schema: "public", table: "meals" }, () => { clearTimeout(mTimer); mTimer = setTimeout(async () => { const a = document.activeElement; if (a && a.dataset && a.dataset.meal) return; try { await loadMeals(); renderMenu(); renderGroceries(); } catch (_) {} }, 300); })
     .subscribe();
 }
 document.addEventListener("visibilitychange", () => {
